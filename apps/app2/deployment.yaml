@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: app1
+  name: app2
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: app1
+      app: app2
   template:
     metadata:
       labels:
-        app: app1
+        app: app2
     spec:
       containers:
-        - name: app1
-          image: jmutai/kuard-amd64:latest
+        - name: app2
+          image: mccutchen/go-httpbin
           ports:
             - containerPort: 8080
 
