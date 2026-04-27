@@ -39,4 +39,4 @@ spec:
         - name: scripts-volume
           configMap:
             name: app1-config-file
-            defaultMode: 755
+            defaultMode: 0755
