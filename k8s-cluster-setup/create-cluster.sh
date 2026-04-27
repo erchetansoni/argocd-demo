@@ -21,3 +21,17 @@ kubectl wait --namespace kube-system \
   --timeout=180s
 
 echo "✅ Kind cluster created successfully!"
+
+
+########## 🌐 Install NGINX Ingress Controller ###########################
+chmod +x k8s-cluster-setup/install-nginx-ingress-controller.sh
+./k8s-cluster-setup/install-nginx-ingress-controller.sh
+
+########## 🚀 Install ArgoCD ###########################
+chmod +x k8s-cluster-setup/install-argocd.sh
+./k8s-cluster-setup/install-argocd.sh
+
+
+########## 🔐 Install External Secrets Operator ###########################
+chmod +x k8s-cluster-setup/install-eso.sh
+./k8s-cluster-setup/install-eso.sh

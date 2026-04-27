@@ -22,6 +22,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: app1-config-env
+            - secretRef:
+                name: app1-secrets
 
           volumeMounts:
             - name: scripts-volume

@@ -9,6 +9,9 @@ spec:
     repoURL: https://github.com/erchetansoni/GitOps-ArgoCD-demo.git
     targetRevision: HEAD
     path: apps/app2
+    directory:
+      recurse: true
+      exclude: app.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: app2
