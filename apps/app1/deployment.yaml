@@ -24,7 +24,7 @@ spec:
                 name: app1-config-env
 
             - secretRef:
-                name: app1-secrets
+                name: app1-secret-env
 
           volumeMounts:
             - name: scripts-volume
@@ -46,9 +46,9 @@ spec:
         - name: scripts-volume
           configMap:
             name: app1-config-file
-            defaultMode: 755
+            defaultMode: 0755
 
         - name: aws-secret-file-volume
           secret:
             secretName: app1-secret-file
-            defaultMode: 755
+            defaultMode: 0755
