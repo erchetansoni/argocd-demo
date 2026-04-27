@@ -15,11 +15,17 @@ spec:
       containers:
         - name: app1
           image: jmutai/kuard-amd64:latest
+
           ports:
             - containerPort: 8080
+
           envFrom:
             - configMapRef:
-                name: app1-config
+                name: app1-config-env
+
+          volumeMounts:
+            - name: scripts-volume
+              mountPath: /scripts
 
           resources:
             requests:
@@ -28,3 +34,9 @@ spec:
             limits:
               memory: "128Mi"
               cpu: "512m"
+
+      volumes:
+        - name: scripts-volume
+          configMap:
+            name: app1-config-file
+            defaultMode: 755
