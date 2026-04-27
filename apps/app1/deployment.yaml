@@ -22,12 +22,17 @@ spec:
           envFrom:
             - configMapRef:
                 name: app1-config-env
+
             - secretRef:
                 name: app1-secrets
 
           volumeMounts:
             - name: scripts-volume
               mountPath: /scripts
+
+            - name: aws-secret-file-volume
+              mountPath: /aws-secrets
+              readOnly: true
 
           resources:
             requests:
@@ -41,4 +46,9 @@ spec:
         - name: scripts-volume
           configMap:
             name: app1-config-file
-            defaultMode: 0755
+            defaultMode: 755
+
+        - name: aws-secret-file-volume
+          secret:
+            secretName: app1-secret-file
+            defaultMode: 755
