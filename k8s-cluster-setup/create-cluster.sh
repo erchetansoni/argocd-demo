@@ -2,8 +2,8 @@
 
 
 ########## 🚀 Creating Kind Local Cluster ###########################
-K8S_VERSION=$(grep 'image:' k8s-cluster-setup/kind-cluster-config.yaml | awk -F':' '{print $3}' | sed -E 's/^v([0-9]+\.[0-9]+).*/\1/')
-echo "🚀 The Kind cluster will be created with Kubernetes version ${K8S_VERSION}."
+K8S_VERSION=$(grep 'image:' k8s-cluster-setup/kind-cluster-config.yaml | head -n 1 | awk -F':' '{print $NF}')
+echo "🚀 The Kind cluster will be created with Kubernetes version ${K8S_VERSION}"
 read -p "Do you want to proceed? (y/n): " user_input
 
 if [[ "$user_input" != "y" && "$user_input" != "Y" ]]; then
