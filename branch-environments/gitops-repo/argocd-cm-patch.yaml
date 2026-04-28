@@ -1,0 +1,14 @@
+# Apply once during setup. Enables:
+#   - Helm rendering inside Kustomize (helmCharts: in kustomization.yaml)
+#   - Loading resources from outside the kustomization root (the submodule path)
+#
+# Apply with:
+#   kubectl patch configmap argocd-cm -n argocd --patch-file argocd-cm-patch.yaml
+#   kubectl rollout restart deploy/argocd-repo-server -n argocd
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+data:
+  kustomize.buildOptions: "--enable-helm --load-restrictor=LoadRestrictionsNone"
