@@ -32,10 +32,13 @@ platform/
 
 root-app/
   app.yaml
+  apps/
+    app1.yaml
+    app2.yaml
+    app3.yaml
 
 apps/
   app1/
-    app.yaml
     deployment.yaml
     service.yaml
     ingress.yaml
@@ -46,12 +49,10 @@ apps/
       external-secret-env.yaml
       external-secret-file.yaml
   app2/
-    app.yaml
     deployment.yaml
     service.yaml
     ingress.yaml
   app3/
-    app.yaml
     Chart.yaml
     values.yaml
     templates/
@@ -179,13 +180,16 @@ The root app is defined at:
 root-app/app.yaml
 ```
 
-It points to the `apps/` directory and includes only child Argo CD app manifests:
+It points to `root-app/apps`, which contains only child Argo CD `Application` manifests:
 
 ```yaml
-directory:
-  recurse: true
-  include: '*/app.yaml'
+source:
+  path: root-app/apps
+  directory:
+    recurse: true
 ```
+
+The actual app source folders live under `apps/`. This keeps app-of-apps manifests separate from deployable app manifests and Helm charts.
 
 Apply the root app:
 
@@ -275,7 +279,6 @@ kubectl exec -n app1 deploy/app1 -- cat /aws-secrets/hello.sh
 Important files:
 
 ```text
-apps/app2/app.yaml
 apps/app2/deployment.yaml
 apps/app2/service.yaml
 apps/app2/ingress.yaml
@@ -300,7 +303,6 @@ traefik/whoami:latest
 Important files:
 
 ```text
-apps/app3/app.yaml
 apps/app3/Chart.yaml
 apps/app3/values.yaml
 apps/app3/templates/deployment.yaml
