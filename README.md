@@ -11,6 +11,7 @@ The demo includes:
 - Argo CD root app that creates child apps
 - `app1` using ConfigMaps, AWS Secrets Manager env secrets, and AWS Secrets Manager file secrets
 - `app2` as a second simple app
+- `app3` as a Helm-based app using `traefik/whoami:latest`
 
 ## Repository Layout
 
@@ -43,6 +44,14 @@ apps/
     deployment.yaml
     service.yaml
     ingress.yaml
+  app3/
+    app.yaml
+    Chart.yaml
+    values.yaml
+    templates/
+      deployment.yaml
+      service.yaml
+      ingress.yaml
 
 aws-secrets-manager/
   .env.example
@@ -133,6 +142,7 @@ Expected apps:
 root-app
 app1
 app2
+app3
 ```
 
 The child apps create their own namespaces using:
@@ -214,7 +224,46 @@ Validate:
 kubectl get all,ingress -n app2
 ```
 
-## 5. AWS Secrets Manager Setup
+## 5. App3 Helm Chart
+
+`app3` is deployed into namespace `app3`.
+
+It is a Helm chart that uses:
+
+```text
+traefik/whoami:latest
+```
+
+Important files:
+
+```text
+apps/app3/app.yaml
+apps/app3/Chart.yaml
+apps/app3/values.yaml
+apps/app3/templates/deployment.yaml
+apps/app3/templates/service.yaml
+apps/app3/templates/ingress.yaml
+```
+
+Render the chart locally:
+
+```bash
+helm template app3 apps/app3 --namespace app3
+```
+
+Validate:
+
+```bash
+kubectl get all,ingress -n app3
+```
+
+Ingress host:
+
+```text
+app3.chetan.com
+```
+
+## 6. AWS Secrets Manager Setup
 
 The AWS helper files live in:
 
@@ -319,7 +368,7 @@ The app mounts it at:
 /aws-secrets/hello.sh
 ```
 
-## 6. AWS Credentials Secret For ESO
+## 7. AWS Credentials Secret For ESO
 
 ESO needs AWS credentials inside the `app1` namespace so the `SecretStore` can authenticate to AWS Secrets Manager.
 
@@ -338,7 +387,7 @@ secret: aws-secretsmanager-credentials
 
 This Kubernetes Secret is not committed to Git.
 
-## 7. Sync Flow
+## 8. Sync Flow
 
 Typical full flow:
 
@@ -357,6 +406,7 @@ If Argo CD has not refreshed yet:
 kubectl annotate application root-app -n argocd argocd.argoproj.io/refresh=hard --overwrite
 kubectl annotate application app1 -n argocd argocd.argoproj.io/refresh=hard --overwrite
 kubectl annotate application app2 -n argocd argocd.argoproj.io/refresh=hard --overwrite
+kubectl annotate application app3 -n argocd argocd.argoproj.io/refresh=hard --overwrite
 ```
 
 If you need to force a sync:
@@ -365,9 +415,10 @@ If you need to force a sync:
 kubectl patch application root-app -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
 kubectl patch application app1 -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
 kubectl patch application app2 -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
+kubectl patch application app3 -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
 ```
 
-## 8. Validate ESO Sync
+## 9. Validate ESO Sync
 
 Check ExternalSecret status:
 
@@ -391,7 +442,7 @@ kubectl exec -n app1 deploy/app1 -- ls -l /aws-secrets
 kubectl exec -n app1 deploy/app1 -- cat /aws-secrets/hello.sh
 ```
 
-## 9. Delete AWS Secrets
+## 10. Delete AWS Secrets
 
 To delete both AWS Secrets Manager secrets:
 
@@ -408,7 +459,7 @@ argocd-demo/app-secrets
 argocd-demo/app-secret-file
 ```
 
-## 10. Reset The Demo Apps
+## 11. Reset The Demo Apps
 
 Delete all Argo CD apps:
 
@@ -420,6 +471,7 @@ Delete app namespaces:
 
 ```bash
 kubectl delete namespace app1 app2 --ignore-not-found=true
+kubectl delete namespace app3 --ignore-not-found=true
 ```
 
 Verify:
@@ -427,6 +479,7 @@ Verify:
 ```bash
 kubectl get applications -n argocd
 kubectl get namespace app1 app2 --ignore-not-found
+kubectl get namespace app3 --ignore-not-found
 kubectl get ingress -A
 ```
 
@@ -436,7 +489,7 @@ There is also a reset runbook:
 argocd-reset-and-resync.md
 ```
 
-## 11. Delete The KIND Cluster
+## 12. Delete The KIND Cluster
 
 ```bash
 ./k8s-cluster-setup/delete-cluster.sh
