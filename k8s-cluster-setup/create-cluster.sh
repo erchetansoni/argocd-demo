@@ -31,6 +31,9 @@ chmod +x k8s-cluster-setup/install-nginx-ingress-controller.sh
 chmod +x k8s-cluster-setup/install-argocd.sh
 ./k8s-cluster-setup/install-argocd.sh
 
+########## 🌍 Publish ArgoCD ###########################
+chmod +x k8s-cluster-setup/publish-argocd.sh
+./k8s-cluster-setup/publish-argocd.sh
 
 ########## 🔐 Install External Secrets Operator ###########################
 chmod +x k8s-cluster-setup/install-eso.sh

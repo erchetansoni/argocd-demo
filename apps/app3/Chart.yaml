@@ -1,6 +1,0 @@
-apiVersion: v2
-name: app3
-description: A tiny Helm-based Traefik whoami demo app for Argo CD.
-type: application
-version: 0.1.0
-appVersion: latest
