@@ -37,6 +37,8 @@ patches:
         path: /spec/rules/0/host
         value: ${APP3_HOST}
 
-commonLabels:
-  environment: ${ENVIRONMENT}
-  branch: ${BRANCH}
+labels:
+  - includeSelectors: false
+    pairs:
+      environment: ${ENVIRONMENT}
+      branch: ${BRANCH}

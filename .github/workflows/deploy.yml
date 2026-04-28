@@ -47,13 +47,21 @@ jobs:
         with:
           path: source
 
-      - name: Checkout GitOps repo
+      - name: Checkout GitOps repo (with submodule)
         if: steps.branch.outputs.skip == 'false'
         uses: actions/checkout@v4
         with:
           repository: ${{ env.GITOPS_REPO }}
           token: ${{ secrets.GITOPS_TOKEN }}
           path: gitops
+          submodules: true
+
+      - name: Bump _source submodule to this commit
+        if: steps.branch.outputs.skip == 'false'
+        working-directory: gitops/_source
+        run: |
+          git fetch origin "${GITHUB_SHA}"
+          git checkout "${GITHUB_SHA}"
 
       - name: Render environment folder
         if: steps.branch.outputs.skip == 'false'
@@ -76,7 +84,7 @@ jobs:
         run: |
           git config user.name  "gitops-bot"
           git config user.email "gitops-bot@users.noreply.github.com"
-          git add environments/${{ steps.branch.outputs.branch }}
+          git add environments/${{ steps.branch.outputs.branch }} _source
           if git diff --cached --quiet; then
             echo "No changes — nothing to commit."
             exit 0
