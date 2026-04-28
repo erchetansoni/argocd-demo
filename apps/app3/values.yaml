@@ -1,0 +1,27 @@
+replicaCount: 1
+
+image:
+  repository: traefik/whoami
+  tag: latest
+  pullPolicy: IfNotPresent
+
+containerPort: 80
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  host: app3.chetan.com
+  path: /
+  pathType: Prefix
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 16Mi
+  limits:
+    cpu: 50m
+    memory: 64Mi
