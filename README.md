@@ -64,6 +64,7 @@ aws-secrets-manager/
   .env.example
   aws-secrets.example
   aws-secret-file.example
+  setup-aws-secrets.sh
   push-secret-env.sh
   push-secret-file.sh
   create-k8s-aws-credentials-secret.sh
@@ -172,7 +173,147 @@ echo
 
 If the secret is missing, the admin password was likely changed and the initial password secret was removed.
 
-## 3. Argo CD App-of-Apps
+## 3. Prepare AWS Secrets For App1
+
+Do this after the cluster/platform setup and before applying the Argo CD root app. `app1` expects AWS Secrets Manager values to be available through External Secrets Operator.
+
+The AWS helper files live in:
+
+```text
+aws-secrets-manager/
+```
+
+### AWS Credentials
+
+Copy the example:
+
+```bash
+cp aws-secrets-manager/.env.example aws-secrets-manager/.env
+```
+
+Fill in only AWS credentials:
+
+```bash
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_SESSION_TOKEN=
+```
+
+The real `.env` file is ignored by git.
+
+These credentials are used for two things:
+
+1. Pushing demo secrets into AWS Secrets Manager.
+2. Creating a Kubernetes Secret in `app1` so ESO can read from AWS Secrets Manager.
+
+### Env Secret Payload
+
+Copy the example:
+
+```bash
+cp aws-secrets-manager/aws-secrets.example aws-secrets-manager/aws-secrets
+```
+
+Edit it with simple key-value pairs:
+
+```text
+APP_USERNAME=demo-user
+APP_PASSWORD=change-me
+API_KEY=change-me
+```
+
+You can push only this env-style secret with:
+
+```bash
+./aws-secrets-manager/push-secret-env.sh
+```
+
+This creates or updates:
+
+```text
+argocd-demo/app-secrets
+```
+
+ESO pulls this into Kubernetes as:
+
+```text
+app1-secret-env
+```
+
+### File Secret Payload
+
+Copy the example:
+
+```bash
+cp aws-secrets-manager/aws-secret-file.example aws-secrets-manager/aws-secret-file
+```
+
+Edit the file content, for example:
+
+```sh
+#!/bin/sh
+echo "Hello from AWS Secrets Manager!"
+```
+
+You can push only this file-style secret with:
+
+```bash
+./aws-secrets-manager/push-secret-file.sh
+```
+
+This creates or updates:
+
+```text
+argocd-demo/app-secret-file
+```
+
+The file content is stored under key:
+
+```text
+hello.sh
+```
+
+ESO pulls this into Kubernetes as:
+
+```text
+app1-secret-file
+```
+
+The app mounts it at:
+
+```text
+/aws-secrets/hello.sh
+```
+
+### Recommended: Run All AWS Secret Setup Scripts
+
+After `.env`, `aws-secrets`, and `aws-secret-file` are ready, run:
+
+```bash
+./aws-secrets-manager/setup-aws-secrets.sh
+```
+
+This script:
+
+1. Adds execute permissions to the AWS helper scripts.
+2. Runs `push-secret-env.sh`.
+3. Runs `push-secret-file.sh`.
+4. Runs `create-k8s-aws-credentials-secret.sh`.
+
+The last step creates this Kubernetes Secret for ESO:
+
+```yaml
+namespace: app1
+secret: aws-secretsmanager-credentials
+```
+
+This Kubernetes Secret is not committed to Git. To run only this step manually:
+
+```bash
+./aws-secrets-manager/create-k8s-aws-credentials-secret.sh
+```
+
+## 4. Argo CD App-of-Apps
 
 The root app is defined at:
 
@@ -219,7 +360,36 @@ syncOptions:
   - CreateNamespace=true
 ```
 
-## 4. App1
+## 5. Sync Flow
+
+Typical full flow:
+
+```bash
+./aws-secrets-manager/setup-aws-secrets.sh
+
+kubectl apply -f root-app/app.yaml
+kubectl get applications -n argocd
+```
+
+If Argo CD has not refreshed yet:
+
+```bash
+kubectl annotate application root-app -n argocd argocd.argoproj.io/refresh=hard --overwrite
+kubectl annotate application app1 -n argocd argocd.argoproj.io/refresh=hard --overwrite
+kubectl annotate application app2 -n argocd argocd.argoproj.io/refresh=hard --overwrite
+kubectl annotate application app3 -n argocd argocd.argoproj.io/refresh=hard --overwrite
+```
+
+If you need to force a sync:
+
+```bash
+kubectl patch application root-app -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
+kubectl patch application app1 -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
+kubectl patch application app2 -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
+kubectl patch application app3 -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
+```
+
+## 6. App1
 
 `app1` is deployed into namespace `app1`.
 
@@ -272,7 +442,7 @@ kubectl exec -n app1 deploy/app1 -- ls -l /scripts /aws-secrets
 kubectl exec -n app1 deploy/app1 -- cat /aws-secrets/hello.sh
 ```
 
-## 5. App2
+## 7. App2
 
 `app2` is deployed into namespace `app2`.
 
@@ -290,7 +460,7 @@ Validate:
 kubectl get all,ingress -n app2
 ```
 
-## 6. App3 Helm Chart
+## 8. App3 Helm Chart
 
 `app3` is deployed into namespace `app3`.
 
@@ -328,162 +498,7 @@ Ingress host:
 app3.chetan.com
 ```
 
-## 7. AWS Secrets Manager Setup
-
-The AWS helper files live in:
-
-```text
-aws-secrets-manager/
-```
-
-### AWS Credentials
-
-Copy the example:
-
-```bash
-cp aws-secrets-manager/.env.example aws-secrets-manager/.env
-```
-
-Fill in only AWS credentials:
-
-```bash
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_SESSION_TOKEN=
-```
-
-The real `.env` file is ignored by git.
-
-### Env Secret Payload
-
-Copy the example:
-
-```bash
-cp aws-secrets-manager/aws-secrets.example aws-secrets-manager/aws-secrets
-```
-
-Edit it with simple key-value pairs:
-
-```text
-APP_USERNAME=demo-user
-APP_PASSWORD=change-me
-API_KEY=change-me
-```
-
-Push it to AWS Secrets Manager:
-
-```bash
-./aws-secrets-manager/push-secret-env.sh
-```
-
-This creates or updates:
-
-```text
-argocd-demo/app-secrets
-```
-
-ESO pulls this into Kubernetes as:
-
-```text
-app1-secret-env
-```
-
-### File Secret Payload
-
-Copy the example:
-
-```bash
-cp aws-secrets-manager/aws-secret-file.example aws-secrets-manager/aws-secret-file
-```
-
-Edit the file content, for example:
-
-```sh
-#!/bin/sh
-echo "Hello from AWS Secrets Manager!"
-```
-
-Push it to AWS Secrets Manager:
-
-```bash
-./aws-secrets-manager/push-secret-file.sh
-```
-
-This creates or updates:
-
-```text
-argocd-demo/app-secret-file
-```
-
-The file content is stored under key:
-
-```text
-hello.sh
-```
-
-ESO pulls this into Kubernetes as:
-
-```text
-app1-secret-file
-```
-
-The app mounts it at:
-
-```text
-/aws-secrets/hello.sh
-```
-
-## 8. AWS Credentials Secret For ESO
-
-ESO needs AWS credentials inside the `app1` namespace so the `SecretStore` can authenticate to AWS Secrets Manager.
-
-Create that Kubernetes Secret from your local `.env`:
-
-```bash
-./aws-secrets-manager/create-k8s-aws-credentials-secret.sh
-```
-
-This creates:
-
-```text
-namespace: app1
-secret: aws-secretsmanager-credentials
-```
-
-This Kubernetes Secret is not committed to Git.
-
-## 9. Sync Flow
-
-Typical full flow:
-
-```bash
-./aws-secrets-manager/push-secret-env.sh
-./aws-secrets-manager/push-secret-file.sh
-./aws-secrets-manager/create-k8s-aws-credentials-secret.sh
-
-kubectl apply -f root-app/app.yaml
-kubectl get applications -n argocd
-```
-
-If Argo CD has not refreshed yet:
-
-```bash
-kubectl annotate application root-app -n argocd argocd.argoproj.io/refresh=hard --overwrite
-kubectl annotate application app1 -n argocd argocd.argoproj.io/refresh=hard --overwrite
-kubectl annotate application app2 -n argocd argocd.argoproj.io/refresh=hard --overwrite
-kubectl annotate application app3 -n argocd argocd.argoproj.io/refresh=hard --overwrite
-```
-
-If you need to force a sync:
-
-```bash
-kubectl patch application root-app -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
-kubectl patch application app1 -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
-kubectl patch application app2 -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
-kubectl patch application app3 -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
-```
-
-## 10. Validate ESO Sync
+## 9. Validate ESO Sync
 
 Check ExternalSecret status:
 
@@ -507,7 +522,7 @@ kubectl exec -n app1 deploy/app1 -- ls -l /aws-secrets
 kubectl exec -n app1 deploy/app1 -- cat /aws-secrets/hello.sh
 ```
 
-## 11. Delete AWS Secrets
+## 10. Delete AWS Secrets
 
 To delete both AWS Secrets Manager secrets:
 
@@ -524,7 +539,7 @@ argocd-demo/app-secrets
 argocd-demo/app-secret-file
 ```
 
-## 12. Reset The Demo Apps
+## 11. Reset The Demo Apps
 
 Delete all Argo CD apps:
 
@@ -554,7 +569,7 @@ There is also a reset runbook:
 argocd-reset-and-resync.md
 ```
 
-## 13. Delete The KIND Cluster
+## 12. Delete The KIND Cluster
 
 ```bash
 ./k8s-cluster-setup/delete-cluster.sh
