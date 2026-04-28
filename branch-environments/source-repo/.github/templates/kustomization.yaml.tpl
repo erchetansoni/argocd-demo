@@ -8,10 +8,12 @@ resources:
   - ../../_source/apps/app2
   - ../../_source/apps/app3
 
+helmGlobals:
+  chartHome: ../../_source/apps
+
 helmCharts:
   - name: app1
     releaseName: app1
-    path: ../../_source/apps/app1
     valuesFile: app1-values.yaml
     namespace: ${NAMESPACE}
 
