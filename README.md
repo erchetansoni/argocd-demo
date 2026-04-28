@@ -23,6 +23,12 @@ k8s-cluster-setup/
   install-nginx-ingress-controller.sh
   install-argocd.sh
   install-eso.sh
+  publish-argocd.sh
+
+platform/
+  argocd/
+    argocd-cmd-params-cm.yaml
+    ingress.yaml
 
 root-app/
   app.yaml
@@ -91,7 +97,8 @@ This script currently runs the full platform setup:
 1. Creates the KIND cluster.
 2. Installs NGINX Ingress Controller.
 3. Installs Argo CD.
-4. Installs External Secrets Operator.
+4. Publishes Argo CD at `http://argocd.chetan.com`.
+5. Installs External Secrets Operator.
 
 Validate:
 
@@ -108,7 +115,63 @@ Expected context:
 kind-gitops-demo-cluster
 ```
 
-## 2. Argo CD App-of-Apps
+## 2. Publish Argo CD
+
+Argo CD can be exposed through NGINX Ingress at:
+
+```text
+http://argocd.chetan.com
+```
+
+The manifests live in:
+
+```text
+platform/argocd/
+```
+
+Publish Argo CD:
+
+```bash
+./k8s-cluster-setup/publish-argocd.sh
+```
+
+The script:
+
+1. Applies the Argo CD ingress manifests.
+2. Enables `server.insecure` for local HTTP ingress.
+3. Restarts `argocd-server`.
+4. Prints the `/etc/hosts` entry.
+
+Add this to `/etc/hosts` if needed:
+
+```text
+127.0.0.1 argocd.chetan.com
+```
+
+Then open:
+
+```text
+http://argocd.chetan.com
+```
+
+Default username:
+
+```text
+admin
+```
+
+The publish script prints the initial admin password if it still exists. You can also retrieve it manually:
+
+```bash
+kubectl get secret argocd-initial-admin-secret \
+  -n argocd \
+  -o jsonpath="{.data.password}" | base64 -d
+echo
+```
+
+If the secret is missing, the admin password was likely changed and the initial password secret was removed.
+
+## 3. Argo CD App-of-Apps
 
 The root app is defined at:
 
@@ -152,7 +215,7 @@ syncOptions:
   - CreateNamespace=true
 ```
 
-## 3. App1
+## 4. App1
 
 `app1` is deployed into namespace `app1`.
 
@@ -205,7 +268,7 @@ kubectl exec -n app1 deploy/app1 -- ls -l /scripts /aws-secrets
 kubectl exec -n app1 deploy/app1 -- cat /aws-secrets/hello.sh
 ```
 
-## 4. App2
+## 5. App2
 
 `app2` is deployed into namespace `app2`.
 
@@ -224,7 +287,7 @@ Validate:
 kubectl get all,ingress -n app2
 ```
 
-## 5. App3 Helm Chart
+## 6. App3 Helm Chart
 
 `app3` is deployed into namespace `app3`.
 
@@ -263,7 +326,7 @@ Ingress host:
 app3.chetan.com
 ```
 
-## 6. AWS Secrets Manager Setup
+## 7. AWS Secrets Manager Setup
 
 The AWS helper files live in:
 
@@ -368,7 +431,7 @@ The app mounts it at:
 /aws-secrets/hello.sh
 ```
 
-## 7. AWS Credentials Secret For ESO
+## 8. AWS Credentials Secret For ESO
 
 ESO needs AWS credentials inside the `app1` namespace so the `SecretStore` can authenticate to AWS Secrets Manager.
 
@@ -387,7 +450,7 @@ secret: aws-secretsmanager-credentials
 
 This Kubernetes Secret is not committed to Git.
 
-## 8. Sync Flow
+## 9. Sync Flow
 
 Typical full flow:
 
@@ -418,7 +481,7 @@ kubectl patch application app2 -n argocd --type merge -p '{"operation":{"sync":{
 kubectl patch application app3 -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
 ```
 
-## 9. Validate ESO Sync
+## 10. Validate ESO Sync
 
 Check ExternalSecret status:
 
@@ -442,7 +505,7 @@ kubectl exec -n app1 deploy/app1 -- ls -l /aws-secrets
 kubectl exec -n app1 deploy/app1 -- cat /aws-secrets/hello.sh
 ```
 
-## 10. Delete AWS Secrets
+## 11. Delete AWS Secrets
 
 To delete both AWS Secrets Manager secrets:
 
@@ -459,7 +522,7 @@ argocd-demo/app-secrets
 argocd-demo/app-secret-file
 ```
 
-## 11. Reset The Demo Apps
+## 12. Reset The Demo Apps
 
 Delete all Argo CD apps:
 
@@ -489,7 +552,7 @@ There is also a reset runbook:
 argocd-reset-and-resync.md
 ```
 
-## 12. Delete The KIND Cluster
+## 13. Delete The KIND Cluster
 
 ```bash
 ./k8s-cluster-setup/delete-cluster.sh
