@@ -9,9 +9,9 @@ The demo includes:
 - Argo CD
 - External Secrets Operator
 - Argo CD root app that creates child apps
-- `app1` using ConfigMaps, AWS Secrets Manager env secrets, and AWS Secrets Manager file secrets
+- `app1` as a production-style Helm chart using ConfigMaps, AWS Secrets Manager env secrets, and AWS Secrets Manager file secrets
 - `app2` as a second simple app
-- `app3` as a Helm-based app using `traefik/whoami:latest`
+- `app3` as a simple raw-manifest app using `traefik/whoami:latest`
 
 ## Repository Layout
 
@@ -39,26 +39,26 @@ root-app/
 
 apps/
   app1/
-    deployment.yaml
-    service.yaml
-    ingress.yaml
-    configmap-env.yaml
-    configmap-file.yaml
-    external-secrets/
-      secret-store.yaml
-      external-secret-env.yaml
-      external-secret-file.yaml
-  app2/
-    deployment.yaml
-    service.yaml
-    ingress.yaml
-  app3/
     Chart.yaml
     values.yaml
     templates/
       deployment.yaml
       service.yaml
       ingress.yaml
+      configmap-env.yaml
+      configmap-file.yaml
+      external-secrets/
+        secret-store.yaml
+        external-secret-env.yaml
+        external-secret-file.yaml
+  app2/
+    deployment.yaml
+    service.yaml
+    ingress.yaml
+  app3/
+    deployment.yaml
+    service.yaml
+    ingress.yaml
 
 aws-secrets-manager/
   .env.example
@@ -393,10 +393,12 @@ kubectl patch application app3 -n argocd --type merge -p '{"operation":{"sync":{
 
 `app1` is deployed into namespace `app1`.
 
+It is packaged as a Helm chart because it represents the more production-like example in this demo.
+
 It uses:
 
-- `configmap-env.yaml` for environment variables
-- `configmap-file.yaml` for a mounted file
+- Helm values for environment variables
+- Helm values for a mounted ConfigMap file
 - AWS Secrets Manager env secrets synced by ESO
 - AWS Secrets Manager file secrets synced by ESO
 - NGINX ingress host `app1.chetan.com`
@@ -404,12 +406,14 @@ It uses:
 Important files:
 
 ```text
-apps/app1/deployment.yaml
-apps/app1/configmap-env.yaml
-apps/app1/configmap-file.yaml
-apps/app1/external-secrets/secret-store.yaml
-apps/app1/external-secrets/external-secret-env.yaml
-apps/app1/external-secrets/external-secret-file.yaml
+apps/app1/Chart.yaml
+apps/app1/values.yaml
+apps/app1/templates/deployment.yaml
+apps/app1/templates/configmap-env.yaml
+apps/app1/templates/configmap-file.yaml
+apps/app1/templates/external-secrets/secret-store.yaml
+apps/app1/templates/external-secrets/external-secret-env.yaml
+apps/app1/templates/external-secrets/external-secret-file.yaml
 ```
 
 The deployment consumes env values from:
@@ -430,6 +434,13 @@ It mounts files from:
 ```
 
 Validate app1:
+
+```bash
+helm template app1 apps/app1 --namespace app1
+helm lint apps/app1
+```
+
+After sync:
 
 ```bash
 kubectl get all,cm,secret,externalsecret,secretstore,ingress -n app1
@@ -460,11 +471,13 @@ Validate:
 kubectl get all,ingress -n app2
 ```
 
-## 8. App3 Helm Chart
+## 8. App3
 
 `app3` is deployed into namespace `app3`.
 
-It is a Helm chart that uses:
+It is intentionally kept as plain Kubernetes YAML to showcase the simplest possible non-Helm app.
+
+It uses:
 
 ```text
 traefik/whoami:latest
@@ -473,17 +486,15 @@ traefik/whoami:latest
 Important files:
 
 ```text
-apps/app3/Chart.yaml
-apps/app3/values.yaml
-apps/app3/templates/deployment.yaml
-apps/app3/templates/service.yaml
-apps/app3/templates/ingress.yaml
+apps/app3/deployment.yaml
+apps/app3/service.yaml
+apps/app3/ingress.yaml
 ```
 
-Render the chart locally:
+Validate:
 
 ```bash
-helm template app3 apps/app3 --namespace app3
+kubectl apply --dry-run=client -f apps/app3 -o name
 ```
 
 Validate:

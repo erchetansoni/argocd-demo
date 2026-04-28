@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: app1-config-env
-  namespace: app1
-data:
-  APP_NAME: "App 1"
-  ENVIRONMENT: "Development"
-  FEATURE_ENABLED: "true"
