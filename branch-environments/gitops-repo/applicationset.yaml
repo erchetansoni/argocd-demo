@@ -8,23 +8,31 @@ spec:
   goTemplateOptions: ["missingkey=error"]
 
   generators:
-    - git:
-        repoURL: https://github.com/erchetansoni/argocd-demo-gitops.git
-        revision: HEAD
-        directories:
-          - path: environments/*
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/erchetansoni/argocd-demo-gitops.git
+              revision: HEAD
+              directories:
+                - path: environments/*
+          - list:
+              elements:
+                - app: app1
+                - app: app2
+                - app: app3
 
   template:
     metadata:
-      name: 'env-{{ .path.basename }}'
+      name: '{{ .app }}-{{ .path.basename }}'
       labels:
+        app: '{{ .app }}'
         branch: '{{ .path.basename }}'
     spec:
       project: default
       source:
         repoURL: https://github.com/erchetansoni/argocd-demo-gitops.git
         targetRevision: HEAD
-        path: '{{ .path.path }}'
+        path: '{{ .path.path }}/{{ .app }}'
         kustomize: {}
       destination:
         server: https://kubernetes.default.svc
