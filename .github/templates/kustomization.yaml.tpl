@@ -5,7 +5,6 @@ namespace: ${NAMESPACE}
 
 resources:
   - namespace.yaml
-  - aws-credentials.yaml
   - ../../_source/apps/app2
   - ../../_source/apps/app3
 
