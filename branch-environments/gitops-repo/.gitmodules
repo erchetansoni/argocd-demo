@@ -1,4 +1,0 @@
-[submodule "_source"]
-	path = _source
-	url = https://github.com/erchetansoni/argocd-demo.git
-	branch = main

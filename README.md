@@ -1,599 +1,260 @@
-# GitOps Argo CD App-of-Apps Demo
+# argocd-demo
 
-This repo demonstrates an Argo CD app-of-apps deployment on a local KIND cluster.
+Branch-driven GitOps on Kubernetes. Push a branch → an environment provisions itself. Delete a branch → the environment tears itself down. **Zero manual ArgoCD work after the one-time setup.**
 
-The demo includes:
+This repo is the **source of truth** for the application code, Helm chart, raw manifests, cluster bootstrap, and the GitHub Actions pipeline. Per-environment Kubernetes manifests live in a separate repo: [`argocd-demo-gitops`](https://github.com/erchetansoni/argocd-demo-gitops) (the GitOps repo ArgoCD watches).
 
-- KIND cluster creation
-- NGINX Ingress Controller
-- Argo CD
-- External Secrets Operator
-- Argo CD root app that creates child apps
-- `app1` as a production-style Helm chart using ConfigMaps, AWS Secrets Manager env secrets, and AWS Secrets Manager file secrets
-- `app2` as a second simple app
-- `app3` as a simple raw-manifest app using `traefik/whoami:latest`
+---
 
-## Repository Layout
+## How a branch becomes an environment
 
-```text
-k8s-cluster-setup/
-  kind-cluster-config.yaml
-  create-cluster.sh
-  delete-cluster.sh
-  install-nginx-ingress-controller.sh
-  install-argocd.sh
-  install-eso.sh
-  publish-argocd.sh
+```mermaid
+flowchart LR
+    Dev["Developer<br/>git push origin qa"]:::user
+    SrcRepo["argocd-demo<br/>(this repo)"]:::repo
+    CI["GitHub Actions<br/>.github/workflows/<br/>deploy.yml"]:::ci
+    GitOps["argocd-demo-gitops<br/>environments/qa/<br/>{app1,app2,app3}/"]:::repo
+    AppSet["ArgoCD ApplicationSet<br/>matrix: dirs × apps"]:::argo
+    Apps["app1-qa · app2-qa · app3-qa<br/>(3 Applications)"]:::argo
+    K8s["Kubernetes<br/>namespace: qa"]:::k8s
 
-platform/
-  argocd/
-    argocd-cmd-params-cm.yaml
-    ingress.yaml
+    Dev -->|push| SrcRepo
+    SrcRepo -->|on push| CI
+    CI -->|render + commit<br/>bump submodule| GitOps
+    GitOps -->|poll| AppSet
+    AppSet -->|generate| Apps
+    Apps -->|sync| K8s
 
-root-app/
-  app.yaml
-  apps/
-    app1.yaml
-    app2.yaml
-    app3.yaml
-
-apps/
-  app1/
-    Chart.yaml
-    values.yaml
-    templates/
-      deployment.yaml
-      service.yaml
-      ingress.yaml
-      configmap-env.yaml
-      configmap-file.yaml
-      external-secrets/
-        secret-store.yaml
-        external-secret-env.yaml
-        external-secret-file.yaml
-  app2/
-    deployment.yaml
-    service.yaml
-    ingress.yaml
-  app3/
-    deployment.yaml
-    service.yaml
-    ingress.yaml
-
-aws-secrets-manager/
-  .env.example
-  aws-secrets.example
-  aws-secret-file.example
-  setup-aws-secrets.sh
-  push-secret-env.sh
-  push-secret-file.sh
-  create-k8s-aws-credentials-secret.sh
-  delete-aws-secrets.sh
+    classDef user fill:#fef3c7,stroke:#a16207,color:#000
+    classDef repo fill:#dbeafe,stroke:#1e40af,color:#000
+    classDef ci fill:#fce7f3,stroke:#9d174d,color:#000
+    classDef argo fill:#dcfce7,stroke:#166534,color:#000
+    classDef k8s fill:#e0e7ff,stroke:#3730a3,color:#000
 ```
 
-## Prerequisites
+```mermaid
+flowchart LR
+    Del["Developer<br/>git push --delete origin qa"]:::user
+    Cleanup["GitHub Actions<br/>.github/workflows/<br/>cleanup.yml<br/>(on: delete)"]:::ci
+    GitOps["argocd-demo-gitops<br/>environments/qa/ removed"]:::repo
+    AppSet["ApplicationSet<br/>(prune)"]:::argo
+    K8s["Kubernetes<br/>namespace qa torn down"]:::k8s
 
-Install these locally:
+    Del -->|delete branch| Cleanup
+    Cleanup -->|git rm + commit| GitOps
+    GitOps -->|poll| AppSet
+    AppSet -->|delete apps| K8s
 
-```bash
-docker
-kind
-kubectl
-helm
-aws
-jq
+    classDef user fill:#fef3c7,stroke:#a16207,color:#000
+    classDef repo fill:#dbeafe,stroke:#1e40af,color:#000
+    classDef ci fill:#fce7f3,stroke:#9d174d,color:#000
+    classDef argo fill:#dcfce7,stroke:#166534,color:#000
+    classDef k8s fill:#e0e7ff,stroke:#3730a3,color:#000
 ```
 
-You also need AWS credentials with access to Secrets Manager in the configured region.
+---
 
-## 1. Create The Local Cluster
+## Branch → environment mapping
 
-The KIND config creates a cluster named `gitops-demo-cluster` and maps host ports `80` and `443`.
+| Branch | Action | Environment | Namespace | Hosts |
+|---|---|---|---|---|
+| `main` | deploy | `production` | `main` | `app{1,2,3}.chetan.com` |
+| `dev` | deploy | `development` | `dev` | `app{1,2,3}.dev.chetan.com` |
+| `stage` | deploy | `stage` | `stage` | `app{1,2,3}.stage.chetan.com` |
+| `it` | deploy | `information-technology` | `it` | `app{1,2,3}.it.chetan.com` |
+| `qa`, `demo`, … (no `/`) | deploy | `<branch>` | `<branch>` | `app{1,2,3}.<branch>.chetan.com` |
+| `feature/*`, `bug/*`, anything containing `/` | **skip** | — | — | — |
 
-```bash
-./k8s-cluster-setup/create-cluster.sh
+---
+
+## Repo layout
+
+```
+.
+├── apps/                      # Application source (referenced from gitops repo via submodule)
+│   ├── app1/                  # Helm chart (used by app1-<env> Applications)
+│   │   ├── Chart.yaml
+│   │   ├── values.yaml
+│   │   └── templates/
+│   ├── app2/                  # Raw manifests + kustomization.yaml
+│   └── app3/                  # Raw manifests + kustomization.yaml
+├── aws-secrets-manager/       # AWS secret bootstrap scripts
+├── k8s-cluster-setup/         # kind + nginx + ArgoCD + ESO bootstrap
+├── platform/argocd/           # ArgoCD config (ingress, cmd-params)
+└── .github/
+    ├── workflows/
+    │   ├── deploy.yml         # on push: render env folder + push to gitops repo
+    │   └── cleanup.yml        # on branch delete: rm env folder + push
+    ├── scripts/
+    │   └── render-env.sh      # envsubst over .tpl files
+    └── templates/
+        ├── app1/
+        │   ├── kustomization.yaml.tpl
+        │   └── values.yaml.tpl
+        ├── app2/kustomization.yaml.tpl
+        └── app3/kustomization.yaml.tpl
 ```
 
-This script currently runs the full platform setup:
+The companion **gitops repo** layout (one folder per branch, written by CI):
 
-1. Creates the KIND cluster.
-2. Installs NGINX Ingress Controller.
-3. Installs Argo CD.
-4. Publishes Argo CD at `http://argocd.chetan.com`.
-5. Installs External Secrets Operator.
-
-Validate:
-
-```bash
-kind get clusters
-kubectl config current-context
-kubectl get nodes -o wide
-kubectl get pods -A
+```
+argocd-demo-gitops/
+├── _source/                                  # submodule -> argocd-demo (advanced by CI to source HEAD)
+├── applicationset.yaml                       # the only ApplicationSet
+├── argocd-cm-patch.yaml                      # one-time configmap patch
+└── environments/
+    ├── main/
+    │   ├── app1/  (kustomization.yaml + values.yaml)
+    │   ├── app2/  (kustomization.yaml — raw + ingress patch)
+    │   └── app3/  (kustomization.yaml — raw + ingress patch)
+    └── <other branches>/...
 ```
 
-Expected context:
+---
 
-```text
-kind-gitops-demo-cluster
-```
+## How a single Application gets rendered
 
-## 2. Publish Argo CD
-
-Argo CD can be exposed through NGINX Ingress at:
-
-```text
-http://argocd.chetan.com
-```
-
-The manifests live in:
-
-```text
-platform/argocd/
-```
-
-Publish Argo CD:
-
-```bash
-./k8s-cluster-setup/publish-argocd.sh
-```
-
-The script:
-
-1. Applies the Argo CD ingress manifests.
-2. Enables `server.insecure` for local HTTP ingress.
-3. Restarts `argocd-server`.
-4. Prints the `/etc/hosts` entry.
-
-Add this to `/etc/hosts` if needed:
-
-```text
-127.0.0.1 argocd.chetan.com
-```
-
-Then open:
-
-```text
-http://argocd.chetan.com
-```
-
-Default username:
-
-```text
-admin
-```
-
-The publish script prints the initial admin password if it still exists. You can also retrieve it manually:
-
-```bash
-kubectl get secret argocd-initial-admin-secret \
-  -n argocd \
-  -o jsonpath="{.data.password}" | base64 -d
-echo
-```
-
-If the secret is missing, the admin password was likely changed and the initial password secret was removed.
-
-## 3. Prepare AWS Secrets For App1
-
-Do this after the cluster/platform setup and before applying the Argo CD root app. `app1` expects AWS Secrets Manager values to be available through External Secrets Operator.
-
-The AWS helper files live in:
-
-```text
-aws-secrets-manager/
-```
-
-### AWS Credentials
-
-Copy the example:
-
-```bash
-cp aws-secrets-manager/.env.example aws-secrets-manager/.env
-```
-
-Fill in only AWS credentials:
-
-```bash
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_SESSION_TOKEN=
-```
-
-The real `.env` file is ignored by git.
-
-These credentials are used for two things:
-
-1. Pushing demo secrets into AWS Secrets Manager.
-2. Creating a Kubernetes Secret in `app1` so ESO can read from AWS Secrets Manager.
-
-### Env Secret Payload
-
-Copy the example:
-
-```bash
-cp aws-secrets-manager/aws-secrets.example aws-secrets-manager/aws-secrets
-```
-
-Edit it with simple key-value pairs:
-
-```text
-APP_USERNAME=demo-user
-APP_PASSWORD=change-me
-API_KEY=change-me
-```
-
-You can push only this env-style secret with:
-
-```bash
-./aws-secrets-manager/push-secret-env.sh
-```
-
-This creates or updates:
-
-```text
-argocd-demo/app-secrets
-```
-
-ESO pulls this into Kubernetes as:
-
-```text
-app1-secret-env
-```
-
-### File Secret Payload
-
-Copy the example:
-
-```bash
-cp aws-secrets-manager/aws-secret-file.example aws-secrets-manager/aws-secret-file
-```
-
-Edit the file content, for example:
-
-```sh
-#!/bin/sh
-echo "Hello from AWS Secrets Manager!"
-```
-
-You can push only this file-style secret with:
-
-```bash
-./aws-secrets-manager/push-secret-file.sh
-```
-
-This creates or updates:
-
-```text
-argocd-demo/app-secret-file
-```
-
-The file content is stored under key:
-
-```text
-hello.sh
-```
-
-ESO pulls this into Kubernetes as:
-
-```text
-app1-secret-file
-```
-
-The app mounts it at:
-
-```text
-/aws-secrets/hello.sh
-```
-
-### Recommended: Run All AWS Secret Setup Scripts
-
-After `.env`, `aws-secrets`, and `aws-secret-file` are ready, run:
-
-```bash
-./aws-secrets-manager/setup-aws-secrets.sh
-```
-
-This script:
-
-1. Adds execute permissions to the AWS helper scripts.
-2. Runs `push-secret-env.sh`.
-3. Runs `push-secret-file.sh`.
-4. Runs `create-k8s-aws-credentials-secret.sh`.
-
-The last step creates this Kubernetes Secret for ESO:
+ArgoCD pulls the gitops repo (with submodule). For `app1-qa`, the source path is `environments/qa/app1/`. Inside, the kustomization references the chart via the submodule:
 
 ```yaml
-namespace: app1
-secret: aws-secretsmanager-credentials
+# environments/qa/app1/kustomization.yaml
+namespace: qa
+helmGlobals:
+  chartHome: ../../../_source/apps          # -> resolves to apps/app1 in source repo
+helmCharts:
+  - name: app1
+    releaseName: app1
+    valuesFile: values.yaml                  # per-env values
+    namespace: qa
 ```
 
-This Kubernetes Secret is not committed to Git. To run only this step manually:
+For `app2-qa` / `app3-qa`, the kustomization pulls in the raw manifest dirs and patches the ingress host:
+
+```yaml
+# environments/qa/app2/kustomization.yaml
+namespace: qa
+resources:
+  - ../../../_source/apps/app2
+patches:
+  - target: { kind: Ingress, name: app2-ingress }
+    patch: |
+      - op: replace
+        path: /spec/rules/0/host
+        value: app2.qa.chetan.com
+```
+
+The submodule pointer is **bumped to the source-repo SHA on every CI run**, so ArgoCD always sees the chart/manifests as they existed at the commit that triggered the pipeline.
+
+---
+
+## Why this shape (and what's *not* mandatory)
+
+| Choice | Why | Mandatory? |
+|---|---|---|
+| Two repos (source + gitops) | Standard GitOps pattern; CI in source pushes to gitops without infinite loops; ArgoCD watches one well-defined source of truth | No, but recommended |
+| Submodule | Lets the gitops repo reference the chart/manifests without copying. Per-CI-run pointer bump pins the source state | No — could also pre-render everything in CI |
+| Kustomize wrapper per app | Cleanly mixes Helm (app1) + raw manifests (app2/app3) without converting everything to charts | No — pure-Helm or pre-rendered YAML also works |
+| Matrix ApplicationSet | One Application per (env × app) instead of bundling. Each app has its own status in the ArgoCD UI | No — directory generator + a wrapper kustomization also works |
+| ClusterSecretStore (creds Secret in `external-secrets` ns) | One AWS creds Secret usable by ExternalSecrets in **any** namespace, never lands in git | Required — GitHub push protection blocks creds-in-git |
+
+---
+
+## One-time setup
+
+> Source repo: `git@github.com:erchetansoni/argocd-demo.git`
+> GitOps repo: `git@github.com:erchetansoni/argocd-demo-gitops.git`
+
+### 1. Source repo secrets
+
+In **argocd-demo** → Settings → Actions → Secrets:
+
+| Secret | Value |
+|---|---|
+| `GITOPS_TOKEN` | Fine-grained PAT with `Contents: Read & Write` on `argocd-demo-gitops` |
+
+### 2. Cluster
 
 ```bash
+# Bring up kind + nginx + ArgoCD + ESO (chained inside one script).
+./k8s-cluster-setup/create-cluster.sh
+
+# Enable Helm-in-Kustomize and allow loading from outside the kustomization root.
+kubectl patch configmap argocd-cm -n argocd --type merge -p \
+  '{"data":{"kustomize.buildOptions":"--enable-helm --load-restrictor=LoadRestrictionsNone"}}'
+kubectl rollout restart deploy/argocd-repo-server -n argocd
+
+# Create the AWS creds Secret + ClusterSecretStore (one-time).
 ./aws-secrets-manager/create-k8s-aws-credentials-secret.sh
 ```
 
-## 4. Argo CD App-of-Apps
-
-The root app is defined at:
-
-```text
-root-app/app.yaml
-```
-
-It points to `root-app/apps`, which contains only child Argo CD `Application` manifests:
-
-```yaml
-source:
-  path: root-app/apps
-  directory:
-    recurse: true
-```
-
-The actual app source folders live under `apps/`. This keeps app-of-apps manifests separate from deployable app manifests and Helm charts.
-
-Apply the root app:
+### 3. GitOps repo (one-time)
 
 ```bash
-kubectl apply -f root-app/app.yaml
+git clone git@github.com:erchetansoni/argocd-demo-gitops.git
+cd argocd-demo-gitops
+git submodule add -b main https://github.com/erchetansoni/argocd-demo.git _source
+# Add applicationset.yaml + argocd-cm-patch.yaml at the root, commit, push.
 ```
 
-Watch the apps:
+### 4. Apply the ApplicationSet
 
 ```bash
+kubectl apply -f /path/to/argocd-demo-gitops/applicationset.yaml
+```
+
+After this, **never edit `environments/<branch>/` by hand** — those folders are owned by CI.
+
+---
+
+## Day-to-day usage
+
+### Provision a new environment
+```bash
+git checkout -b qa
+git commit --allow-empty -m "feat(qa): provision qa environment"
+git push -u origin qa
+# ~30s later: namespace `qa` exists, app1-qa / app2-qa / app3-qa are Synced + Healthy
+```
+
+### Tear it down
+```bash
+git push --delete origin qa
+# cleanup.yml fires, removes environments/qa/ from the gitops repo,
+# ApplicationSet auto-prunes app1-qa, app2-qa, app3-qa, namespace qa goes away.
+```
+
+### Update app code
+Push to any valid branch (or `main`). CI re-renders that env's folder and bumps the submodule pointer to your commit. ArgoCD reconciles within a poll interval (~3 min default; force with `kubectl annotate application <name> -n argocd argocd.argoproj.io/refresh=hard --overwrite`).
+
+---
+
+## Validation
+
+```bash
+# Applications (one per env × app)
 kubectl get applications -n argocd
+
+# Per-namespace resources
+kubectl get pods,svc,ingress,externalsecret -n main
+kubectl get pods,svc,ingress,externalsecret -n qa
+
+# ESO: creds + cluster store
+kubectl get secret aws-secretsmanager-credentials -n external-secrets
+kubectl get clustersecretstore aws-secretsmanager
 ```
 
-Expected apps:
+---
 
-```text
-root-app
-app1
-app2
-app3
-```
+## Loop prevention (why CI doesn't trigger itself)
 
-The child apps create their own namespaces using:
+1. CI runs only on the source repo; commits land in a *different* repo (the gitops repo).
+2. Every CI commit message ends with `[skip ci]`.
+3. The render script wipes the env folder before re-rendering, so commits are minimal and idempotent.
 
-```yaml
-syncOptions:
-  - CreateNamespace=true
-```
+---
 
-## 5. Sync Flow
+## Future work (deferred)
 
-Typical full flow:
-
-```bash
-./aws-secrets-manager/setup-aws-secrets.sh
-
-kubectl apply -f root-app/app.yaml
-kubectl get applications -n argocd
-```
-
-If Argo CD has not refreshed yet:
-
-```bash
-kubectl annotate application root-app -n argocd argocd.argoproj.io/refresh=hard --overwrite
-kubectl annotate application app1 -n argocd argocd.argoproj.io/refresh=hard --overwrite
-kubectl annotate application app2 -n argocd argocd.argoproj.io/refresh=hard --overwrite
-kubectl annotate application app3 -n argocd argocd.argoproj.io/refresh=hard --overwrite
-```
-
-If you need to force a sync:
-
-```bash
-kubectl patch application root-app -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
-kubectl patch application app1 -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
-kubectl patch application app2 -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
-kubectl patch application app3 -n argocd --type merge -p '{"operation":{"sync":{"prune":true}}}'
-```
-
-## 6. App1
-
-`app1` is deployed into namespace `app1`.
-
-It is packaged as a Helm chart because it represents the more production-like example in this demo.
-
-It uses:
-
-- Helm values for environment variables
-- Helm values for a mounted ConfigMap file
-- AWS Secrets Manager env secrets synced by ESO
-- AWS Secrets Manager file secrets synced by ESO
-- NGINX ingress host `app1.chetan.com`
-
-Important files:
-
-```text
-apps/app1/Chart.yaml
-apps/app1/values.yaml
-apps/app1/templates/deployment.yaml
-apps/app1/templates/configmap-env.yaml
-apps/app1/templates/configmap-file.yaml
-apps/app1/templates/external-secrets/secret-store.yaml
-apps/app1/templates/external-secrets/external-secret-env.yaml
-apps/app1/templates/external-secrets/external-secret-file.yaml
-```
-
-The deployment consumes env values from:
-
-```yaml
-envFrom:
-  - configMapRef:
-      name: app1-config-env
-  - secretRef:
-      name: app1-secret-env
-```
-
-It mounts files from:
-
-```text
-/scripts
-/aws-secrets
-```
-
-Validate app1:
-
-```bash
-helm template app1 apps/app1 --namespace app1
-helm lint apps/app1
-```
-
-After sync:
-
-```bash
-kubectl get all,cm,secret,externalsecret,secretstore,ingress -n app1
-```
-
-Check inside the pod:
-
-```bash
-kubectl exec -n app1 deploy/app1 -- ls -l /scripts /aws-secrets
-kubectl exec -n app1 deploy/app1 -- cat /aws-secrets/hello.sh
-```
-
-## 7. App2
-
-`app2` is deployed into namespace `app2`.
-
-Important files:
-
-```text
-apps/app2/deployment.yaml
-apps/app2/service.yaml
-apps/app2/ingress.yaml
-```
-
-Validate:
-
-```bash
-kubectl get all,ingress -n app2
-```
-
-## 8. App3
-
-`app3` is deployed into namespace `app3`.
-
-It is intentionally kept as plain Kubernetes YAML to showcase the simplest possible non-Helm app.
-
-It uses:
-
-```text
-traefik/whoami:latest
-```
-
-Important files:
-
-```text
-apps/app3/deployment.yaml
-apps/app3/service.yaml
-apps/app3/ingress.yaml
-```
-
-Validate:
-
-```bash
-kubectl apply --dry-run=client -f apps/app3 -o name
-```
-
-Validate:
-
-```bash
-kubectl get all,ingress -n app3
-```
-
-Ingress host:
-
-```text
-app3.chetan.com
-```
-
-## 9. Validate ESO Sync
-
-Check ExternalSecret status:
-
-```bash
-kubectl get externalsecret -n app1
-kubectl describe externalsecret app1-external-secret-env -n app1
-kubectl describe externalsecret app1-external-secret-file -n app1
-```
-
-Check Kubernetes Secrets:
-
-```bash
-kubectl get secret app1-secret-env -n app1
-kubectl get secret app1-secret-file -n app1
-```
-
-Check mounted file:
-
-```bash
-kubectl exec -n app1 deploy/app1 -- ls -l /aws-secrets
-kubectl exec -n app1 deploy/app1 -- cat /aws-secrets/hello.sh
-```
-
-## 10. Delete AWS Secrets
-
-To delete both AWS Secrets Manager secrets:
-
-```bash
-./aws-secrets-manager/delete-aws-secrets.sh
-```
-
-The script handles missing secrets safely. If only one exists, it deletes that one and skips the missing one.
-
-Secrets deleted:
-
-```text
-argocd-demo/app-secrets
-argocd-demo/app-secret-file
-```
-
-## 11. Reset The Demo Apps
-
-Delete all Argo CD apps:
-
-```bash
-kubectl delete application --all -n argocd --ignore-not-found=true
-```
-
-Delete app namespaces:
-
-```bash
-kubectl delete namespace app1 app2 --ignore-not-found=true
-kubectl delete namespace app3 --ignore-not-found=true
-```
-
-Verify:
-
-```bash
-kubectl get applications -n argocd
-kubectl get namespace app1 app2 --ignore-not-found
-kubectl get namespace app3 --ignore-not-found
-kubectl get ingress -A
-```
-
-There is also a reset runbook:
-
-```text
-argocd-reset-and-resync.md
-```
-
-## 12. Delete The KIND Cluster
-
-```bash
-./k8s-cluster-setup/delete-cluster.sh
-```
-
-## Notes
-
-- Commit and push manifest changes before expecting Argo CD to sync them from GitHub.
-- The Argo CD apps currently point to:
-
-```text
-https://github.com/erchetansoni/GitOps-ArgoCD-demo.git
-```
-
-- Real local secret files are ignored by git.
-- The Kubernetes AWS credentials Secret is created manually from local `.env`; it should not be stored in Git.
+- Replace plain creds Secret with **SealedSecrets** or **SOPS** so even the cluster-side creds are encrypted at rest.
+- Per-branch source pinning via ArgoCD multi-source Applications (each env tracks its own source-repo branch instead of all envs sharing one submodule pointer).
+- TLS on ingresses via cert-manager.
