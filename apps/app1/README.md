@@ -6,7 +6,7 @@ A production-style Helm chart demonstrating:
 - Two ConfigMaps (env-style and file-style).
 - Two `ExternalSecret` resources that pull from AWS Secrets Manager via ESO + a cluster-wide `ClusterSecretStore` named `aws-secretsmanager`.
 
-Used by ArgoCD Applications named `app1-<branch>` (one per environment). Each Application reads `environments/<branch>/app1/values.yaml` from the gitops repo and renders this chart with those values in namespace `<branch>`.
+Used by ArgoCD Applications named `<branch>-app1` (one per environment). Each Application reads `environments/<branch>/app1/values.yaml` from the gitops repo and renders this chart with those values in namespace `<branch>`.
 
 ## Layout
 

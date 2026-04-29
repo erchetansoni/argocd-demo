@@ -15,7 +15,7 @@ flowchart LR
     CI["GitHub Actions<br/>.github/workflows/<br/>deploy.yml"]:::ci
     GitOps["argocd-demo-gitops<br/>environments/qa/<br/>{app1,app2,app3}/"]:::repo
     AppSet["ArgoCD ApplicationSet<br/>matrix: dirs × apps"]:::argo
-    Apps["app1-qa · app2-qa · app3-qa<br/>(3 Applications)"]:::argo
+    Apps["qa-app1 · qa-app2 · qa-app3<br/>(3 Applications)"]:::argo
     K8s["Kubernetes<br/>namespace: qa"]:::k8s
 
     Dev -->|push| SrcRepo
@@ -72,7 +72,7 @@ flowchart LR
 ```
 .
 ├── apps/                      # Application source (referenced from gitops repo via submodule)
-│   ├── app1/                  # Helm chart (used by app1-<env> Applications)
+│   ├── app1/                  # Helm chart (used by <env>-app1 Applications)
 │   │   ├── Chart.yaml
 │   │   ├── values.yaml
 │   │   └── templates/
@@ -114,7 +114,7 @@ argocd-demo-gitops/
 
 ## How a single Application gets rendered
 
-ArgoCD pulls the gitops repo (with submodule). For `app1-qa`, the source path is `environments/qa/app1/`. Inside, the kustomization references the chart via the submodule:
+ArgoCD pulls the gitops repo (with submodule). For `qa-app1`, the source path is `environments/qa/app1/`. Inside, the kustomization references the chart via the submodule:
 
 ```yaml
 # environments/qa/app1/kustomization.yaml
@@ -128,7 +128,7 @@ helmCharts:
     namespace: qa
 ```
 
-For `app2-qa` / `app3-qa`, the kustomization pulls in the raw manifest dirs and patches the ingress host:
+For `qa-app2` / `qa-app3`, the kustomization pulls in the raw manifest dirs and patches the ingress host:
 
 ```yaml
 # environments/qa/app2/kustomization.yaml
@@ -213,14 +213,14 @@ After this, **never edit `environments/<branch>/` by hand** — those folders ar
 git checkout -b qa
 git commit --allow-empty -m "feat(qa): provision qa environment"
 git push -u origin qa
-# ~30s later: namespace `qa` exists, app1-qa / app2-qa / app3-qa are Synced + Healthy
+# ~30s later: namespace `qa` exists, qa-app1 / qa-app2 / qa-app3 are Synced + Healthy
 ```
 
 ### Tear it down
 ```bash
 git push --delete origin qa
 # cleanup.yml fires, removes environments/qa/ from the gitops repo,
-# ApplicationSet auto-prunes app1-qa, app2-qa, app3-qa, namespace qa goes away.
+# ApplicationSet auto-prunes qa-app1, qa-app2, qa-app3, namespace qa goes away.
 ```
 
 ### Update app code

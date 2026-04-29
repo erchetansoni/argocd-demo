@@ -2,7 +2,7 @@
 
 Plain Kubernetes manifests — Deployment + Service + Ingress for [`mccutchen/go-httpbin`](https://github.com/mccutchen/go-httpbin), wrapped in a `kustomization.yaml` so other kustomizations can reference this directory.
 
-Used by ArgoCD Applications named `app2-<branch>`. The per-env kustomization at `environments/<branch>/app2/` in the gitops repo:
+Used by ArgoCD Applications named `<branch>-app2`. The per-env kustomization at `environments/<branch>/app2/` in the gitops repo:
 
 1. Pulls these manifests in via `resources: ../../../_source/apps/app2`.
 2. Sets the namespace.
