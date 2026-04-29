@@ -14,6 +14,7 @@ This repo is the **source of truth** for the application code, Helm chart, raw m
 - [Repo layout](#repo-layout)
 - [Prerequisites](#prerequisites)
 - [Setup from scratch](#setup-from-scratch) — first-time, end-to-end
+- [Working with the two repos](#working-with-the-two-repos) — sync flow, who writes what
 - [Day-to-day usage](#day-to-day-usage)
 - [Validation](#validation)
 - [Troubleshooting](#troubleshooting)
@@ -293,6 +294,91 @@ Watch:
 - After ArgoCD's next poll, `kubectl get applications -n argocd` shows `main-app1`, `main-app2`, `main-app3` as `Synced + Healthy`.
 
 You're now done with setup. From here on, the branch lifecycle takes over.
+
+---
+
+## Working with the two repos
+
+You'll have two local clones — one for `argocd-demo`, one for `argocd-demo-gitops`. Their write patterns are very different and that's where most confusion comes from.
+
+### Who writes to what
+
+```
+                                CI commits
+                                (every push)
+                                     │
+                                     ▼
+You ──push──▶ argocd-demo ──▶ argocd-demo-gitops ──poll──▶ ArgoCD ──▶ K8s
+              (source)            (state)
+              ▲                    ▲
+              │                    │
+        you edit here         CI edits here
+        most of the           almost always
+        time                  (you rarely touch it)
+```
+
+| Repo | Who writes | When you should pull | When you push |
+|---|---|---|---|
+| `argocd-demo` (source) | **You** | Only if collaborating with others | Whenever you make a change — that's the whole point |
+| `argocd-demo-gitops` | **CI** (and rarely you) | Before any local edit (CI commits constantly) | Only when you change `applicationset.yaml`, `argocd-cm-patch.yaml`, or the README |
+
+### The 90% case: only touch the source repo
+
+For app code changes, branch creation, branch deletion — you **never need to clone or pull the gitops repo**. The flow is one-directional:
+
+```
+your push to argocd-demo  →  CI renders + commits to gitops repo  →  ArgoCD picks it up
+```
+
+Your gitops repo on disk is stale the moment CI runs, but that's fine — you don't need it to be fresh unless you're editing it.
+
+### The 10% case: editing the gitops repo
+
+You only edit the gitops repo when:
+- Adding/removing apps in [`applicationset.yaml`](https://github.com/erchetansoni/argocd-demo-gitops/blob/main/applicationset.yaml)
+- Tweaking `argocd-cm-patch.yaml`
+- Updating its README
+
+When you do, **always pull first with rebase** because CI may have added commits since your last pull:
+
+```bash
+cd argocd-demo-gitops
+git pull --rebase                      # always, before any edit
+# … make your changes …
+git add . && git commit -m "..."
+git pull --rebase                      # again, in case CI ran while you were editing
+git push
+```
+
+### Set rebase as default for the gitops repo (one-time)
+
+Best ergonomic improvement — makes plain `git pull` always rebase in this repo, so you'll never see "divergent branches":
+
+```bash
+cd argocd-demo-gitops
+git config pull.rebase true
+```
+
+Or globally for all repos (if you're comfortable with that default):
+
+```bash
+git config --global pull.rebase true
+```
+
+### Why divergent branches happen (and when they don't)
+
+Local: you committed locally but didn't push.
+Remote: CI added a commit (a sync from a branch push, or a teardown commit, or a submodule bump).
+
+Both happened off the same parent commit → two branches off one point → divergent.
+
+This **only happens on the gitops repo**, and only when you edit it locally. The source repo never has this problem because nothing else writes to it.
+
+### A reasonable mental model
+
+> Treat `argocd-demo-gitops` as a **machine-managed cache** of branch states. CI writes; ArgoCD reads. You only intervene to change the *rules* (ApplicationSet) — not the *contents* (env folders).
+
+If you internalize this, the two-repo split feels natural rather than redundant.
 
 ---
 
